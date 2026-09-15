@@ -17,7 +17,7 @@
     "android": {
       "package": "com.gorepyo.rep",
       "adaptiveIcon": {
-        "backgroundColor": "#fff1f2",
+        "backgroundColor": "#E11D48",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"

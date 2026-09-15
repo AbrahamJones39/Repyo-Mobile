@@ -1,6 +1,6 @@
-import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -16,19 +16,23 @@ import {
   urgencyLabels,
 } from "@/lib/theme";
 
+const brandIconSize = { sm: 32, md: 40, lg: 52 } as const;
+const brandRadius = { sm: 8, md: 12, lg: 14 } as const;
+
 export function BrandMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const fontSize = size === "lg" ? 34 : size === "sm" ? 20 : 26;
+  const dim = brandIconSize[size];
   return (
     <View style={styles.brandRow}>
-      <View
-        style={[
-          styles.brandIcon,
-          size === "lg" && { width: 52, height: 52, borderRadius: 14 },
-          size === "sm" && { width: 32, height: 32, borderRadius: 8 },
-        ]}
-      >
-        <Ionicons name="pulse" size={size === "lg" ? 26 : 18} color={colors.white} />
-      </View>
+      <Image
+        source={require("../assets/images/logo.png")}
+        accessibilityLabel="GoRepYo"
+        style={{
+          width: dim,
+          height: dim,
+          borderRadius: brandRadius[size],
+        }}
+      />
       <Text style={[styles.brandText, { fontSize }]}>
         <Text style={{ color: colors.rose }}>Go</Text>
         <Text style={{ color: colors.slate900 }}>RepYo</Text>
@@ -148,14 +152,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-  },
-  brandIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: colors.rose,
-    alignItems: "center",
-    justifyContent: "center",
   },
   brandText: {
     fontWeight: "800",
