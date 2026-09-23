@@ -165,6 +165,10 @@ export default function CalendarScreen() {
       )}
 
       <Text style={styles.section}>Weekly hours</Text>
+      <Text style={styles.hint}>
+        Providers cannot request you outside these hours. Location and ETA sharing are off when you
+        are off.
+      </Text>
       <View style={styles.card}>
         {(data?.rules?.length ? data.rules : DEFAULT_RULES).map((rule) => (
           <Text key={rule.dayOfWeek} style={styles.hours}>
@@ -242,6 +246,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.rose,
     marginTop: 2,
   },
+  hint: { color: colors.slate500, fontSize: 13, lineHeight: 18, marginBottom: 10 },
   section: {
     marginTop: 8,
     marginBottom: 10,

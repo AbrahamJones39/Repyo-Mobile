@@ -3,7 +3,7 @@ import { useAuth } from "@/context/auth";
 import { api } from "@/lib/api";
 import { formatWhen } from "@/lib/format";
 import { colors, repStatusLabels } from "@/lib/theme";
-import type { NotificationItem, RequestData } from "@/lib/types";
+import type { NotificationItem, RequestData, TeamMetrics } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
@@ -25,21 +25,24 @@ export default function DashboardScreen() {
   const [status, setStatus] = useState("OFF_DUTY");
   const [onCall, setOnCall] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [metrics, setMetrics] = useState<TeamMetrics | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
     try {
-      const [reqData, profile, notes] = await Promise.all([
+      const [reqData, profile, notes, teamMetrics] = await Promise.all([
         api<RequestData[]>("/api/requests"),
         api<{ status?: string; onCallEnabled?: boolean } | null>("/api/rep/profile"),
         api<NotificationItem[]>("/api/notifications"),
+        api<TeamMetrics>("/api/rep/team-metrics").catch(() => null),
       ]);
       setRequests(Array.isArray(reqData) ? reqData : []);
       if (profile?.status) setStatus(profile.status);
       if (profile?.onCallEnabled != null) setOnCall(profile.onCallEnabled);
       setUnread(notes.filter((n) => !n.read).length);
+      setMetrics(teamMetrics);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
     }
@@ -147,12 +150,38 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
+      {metrics && metrics.reportCount > 0 && metrics.totals ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>People you oversee</Text>
+          <Text style={styles.metricsNote}>
+            Operational metrics for your reporting line. Patient information is not included.
+          </Text>
+          <View style={styles.metricsRow}>
+            {[
+              ["Reps", metrics.reportCount],
+              ["Available", metrics.totals.available],
+              ["Active", metrics.totals.active],
+              ["Done", metrics.totals.completed],
+              ["Escalated", metrics.totals.escalated],
+            ].map(([label, value]) => (
+              <View key={String(label)} style={styles.metric}>
+                <Text style={styles.metricLabel}>{label}</Text>
+                <Text style={styles.metricValue}>{value}</Text>
+              </View>
+            ))}
+          </View>
+          {metrics.reports?.length ? (
+            <Text style={styles.metricsNote}>{metrics.reports.join(", ")}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {urgent.length > 0 ? (
         <Section title="ASAP" items={urgent} />
       ) : null}
 
       {adminQueue.length > 0 ? (
-        <Section title="Admin queue" items={adminQueue} />
+        <Section title="Admin queue (forwarded)" items={adminQueue} />
       ) : null}
 
       <Text style={styles.section}>Your assignments</Text>
@@ -164,6 +193,11 @@ export default function DashboardScreen() {
       ) : (
         mine.map((request) => <RequestRow key={request.id} request={request} />)
       )}
+      {mine.length === 0 && status !== "AVAILABLE" ? (
+        <Pressable onPress={() => updateStatus("AVAILABLE")} style={styles.goAvailable}>
+          <Text style={styles.goAvailableText}>Go available</Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -196,7 +230,11 @@ function RequestRow({ request }: { request: RequestData }) {
       <View style={styles.requestMeta}>
         <UrgencyBadge urgency={request.urgency} />
         <Text style={styles.when}>{formatWhen(request.scheduledAt)}</Text>
+        {request.alertActive ? <Text style={styles.newBadge}>New</Text> : null}
       </View>
+      {request.status === "EN_ROUTE" && request.etaMinutes != null ? (
+        <Text style={styles.eta}>ETA {request.etaMinutes} min</Text>
+      ) : null}
       {request.identifiersHidden ? (
         <Text style={styles.hidden}>Open to acknowledge and view details</Text>
       ) : null}
@@ -295,5 +333,26 @@ const styles = StyleSheet.create({
   procedure: { marginTop: 4, color: colors.slate600 },
   requestMeta: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   when: { color: colors.slate500, fontSize: 12 },
+  newBadge: {
+    color: colors.rose,
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  eta: { marginTop: 8, color: colors.purple700, fontWeight: "700", fontSize: 13 },
   hidden: { marginTop: 8, color: colors.amber700, fontSize: 12, fontWeight: "600" },
+  metricsNote: { color: colors.slate500, fontSize: 12, lineHeight: 18, marginBottom: 10 },
+  metricsRow: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  metric: { minWidth: 56 },
+  metricLabel: { color: colors.slate500, fontSize: 11 },
+  metricValue: { fontSize: 20, fontWeight: "800", color: colors.slate900 },
+  goAvailable: {
+    marginTop: 12,
+    alignSelf: "center",
+    backgroundColor: colors.rose,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  goAvailableText: { color: colors.white, fontWeight: "700" },
 });

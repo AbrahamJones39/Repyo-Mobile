@@ -3,7 +3,7 @@ import { useAuth } from "@/context/auth";
 import { api } from "@/lib/api";
 import { formatWhen } from "@/lib/format";
 import { colors } from "@/lib/theme";
-import type { ForwardTarget, RequestData } from "@/lib/types";
+import type { ForwardTarget, RequestData, RequestReply } from "@/lib/types";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +28,7 @@ export default function RequestDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -115,6 +116,9 @@ export default function RequestDetailScreen() {
           <UrgencyBadge urgency={request.urgency} />
           <Text style={styles.when}>{formatWhen(request.scheduledAt)}</Text>
         </View>
+        {request.status === "EN_ROUTE" && request.etaMinutes != null ? (
+          <Text style={styles.eta}>ETA {request.etaMinutes} minutes</Text>
+        ) : null}
         {request.facilityAddr ? (
           <Pressable
             onPress={() =>
@@ -228,7 +232,35 @@ export default function RequestDetailScreen() {
             loading={acting}
           />
         ) : null}
+        {!assignedToMe && request.status === "REQUESTING" ? (
+          <PrimaryButton
+            title="Assign a rep"
+            variant="outline"
+            onPress={() => setAssignOpen(true)}
+          />
+        ) : null}
       </View>
+
+      <NotesThread
+        requestId={request.id}
+        replies={request.replies ?? []}
+        currentUserId={user?.id}
+        onPosted={(reply) =>
+          setRequest((prev) =>
+            prev ? { ...prev, replies: [...(prev.replies ?? []), reply] } : prev
+          )
+        }
+      />
+
+      <AssignSheet
+        visible={assignOpen}
+        requestId={request.id}
+        onClose={() => setAssignOpen(false)}
+        onSuccess={() => {
+          setAssignOpen(false);
+          load();
+        }}
+      />
 
       <ForwardSheet
         visible={forwardOpen}
@@ -241,6 +273,148 @@ export default function RequestDetailScreen() {
         }}
       />
     </ScrollView>
+  );
+}
+
+function NotesThread({
+  requestId,
+  replies,
+  currentUserId,
+  onPosted,
+}: {
+  requestId: string;
+  replies: RequestReply[];
+  currentUserId?: string;
+  onPosted: (reply: RequestReply) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? replies : replies.slice(-3);
+
+  async function send() {
+    if (!draft.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const reply = await api<RequestReply>(`/api/requests/${requestId}/replies`, {
+        method: "POST",
+        body: JSON.stringify({ body: draft.trim() }),
+      });
+      setDraft("");
+      onPosted(reply);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send note");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <View style={styles.notesCard}>
+      <Text style={styles.notesTitle}>Notes {replies.length ? `(${replies.length})` : ""}</Text>
+      <ErrorBanner message={error} />
+      {replies.length === 0 ? (
+        <Text style={styles.notesHint}>
+          Leave a short note if this request needs a correction or clarification.
+        </Text>
+      ) : (
+        <>
+          {replies.length > 3 && !showAll ? (
+            <Pressable onPress={() => setShowAll(true)}>
+              <Text style={styles.link}>Show earlier notes ({replies.length - 3})</Text>
+            </Pressable>
+          ) : null}
+          {visible.map((reply) => (
+            <View
+              key={reply.id}
+              style={[styles.reply, reply.author.id === currentUserId && styles.replyMine]}
+            >
+              <Text style={styles.replyMeta}>
+                {reply.author.name} · {formatWhen(reply.createdAt)}
+              </Text>
+              <Text style={styles.replyBody}>{reply.body}</Text>
+            </View>
+          ))}
+        </>
+      )}
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        placeholder="Reply with a short note…"
+        placeholderTextColor={colors.slate400}
+        maxLength={400}
+        style={styles.input}
+      />
+      <Text style={styles.notesHint}>For scheduling and coverage only. Skip extra patient details.</Text>
+      <PrimaryButton title={sending ? "Sending..." : "Send"} onPress={send} loading={sending} disabled={!draft.trim()} />
+    </View>
+  );
+}
+
+function AssignSheet({
+  visible,
+  requestId,
+  onClose,
+  onSuccess,
+}: {
+  visible: boolean;
+  requestId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [reps, setReps] = useState<{ id: string; name: string }[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    api<{ id: string; name: string }[]>("/api/company/reps")
+      .then((data) => setReps(Array.isArray(data) ? data : []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load reps"));
+  }, [visible]);
+
+  async function submit() {
+    if (!selectedId) return;
+    setLoading(true);
+    setError("");
+    try {
+      await api(`/api/requests/${requestId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ repId: selectedId }),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Assign failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modal}>
+          <Text style={styles.modalTitle}>Assign a rep</Text>
+          <ErrorBanner message={error} />
+          <ScrollView style={{ maxHeight: 280 }}>
+            {reps.map((rep) => (
+              <Pressable
+                key={rep.id}
+                onPress={() => setSelectedId(rep.id)}
+                style={[styles.target, selectedId === rep.id && styles.targetOn]}
+              >
+                <Text style={styles.targetName}>{rep.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+          <PrimaryButton title="Assign" onPress={submit} loading={loading} disabled={!selectedId} />
+          <PrimaryButton title="Cancel" variant="ghost" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -356,6 +530,7 @@ const styles = StyleSheet.create({
   procedure: { marginTop: 6, fontSize: 16, color: colors.slate600 },
   row: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 },
   when: { color: colors.slate500 },
+  eta: { marginTop: 10, color: colors.purple700, fontWeight: "700" },
   link: { marginTop: 10, color: colors.rose, fontWeight: "600" },
   meta: { marginTop: 6, color: colors.slate600 },
   notes: { marginTop: 12, color: colors.slate700, lineHeight: 20 },
@@ -367,6 +542,25 @@ const styles = StyleSheet.create({
   },
   phiTitle: { fontWeight: "700", color: colors.slate700, marginBottom: 4 },
   actions: { marginTop: 16, gap: 10 },
+  notesCard: {
+    marginTop: 16,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    padding: 14,
+    gap: 8,
+  },
+  notesTitle: { fontWeight: "800", color: colors.slate800 },
+  notesHint: { color: colors.slate500, fontSize: 12, lineHeight: 18 },
+  reply: {
+    backgroundColor: colors.slate50,
+    borderRadius: 10,
+    padding: 10,
+  },
+  replyMine: { backgroundColor: colors.roseSoft },
+  replyMeta: { color: colors.slate500, fontSize: 11, fontWeight: "600" },
+  replyBody: { marginTop: 4, color: colors.slate800 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",

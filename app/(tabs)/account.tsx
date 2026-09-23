@@ -1,19 +1,34 @@
 import { BrandMark, ErrorBanner, PrimaryButton } from "@/components/ui";
 import { useAuth } from "@/context/auth";
-import { DEFAULT_API_URL, getApiUrl, setApiUrl } from "@/lib/api";
-import { colors } from "@/lib/theme";
+import { api, DEFAULT_API_URL, getApiUrl, setApiUrl } from "@/lib/api";
+import { colors, repStatusLabels } from "@/lib/theme";
+import type { AccountProfile } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function AccountScreen() {
   const { user, logout } = useAuth();
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [phone, setPhone] = useState("");
   const [serverUrl, setServerUrl] = useState(DEFAULT_API_URL);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     getApiUrl().then(setServerUrl);
+    apiProfile();
   }, []);
+
+  async function apiProfile() {
+    try {
+      const data = await api<AccountProfile>("/api/profile");
+      setProfile(data);
+      setPhone(data.phone ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load profile");
+    }
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -21,9 +36,31 @@ export default function AccountScreen() {
       <Text style={styles.caption}>Device representative app</Text>
 
       <View style={styles.card}>
-        <Text style={styles.name}>{user?.name}</Text>
-        <Text style={styles.meta}>{user?.email}</Text>
+        <Text style={styles.name}>{profile?.name ?? user?.name}</Text>
+        <Text style={styles.meta}>{profile?.email ?? user?.email}</Text>
         <Text style={styles.meta}>Role: Device rep</Text>
+        {profile?.company?.name ? <Text style={styles.meta}>{profile.company.name}</Text> : null}
+        {profile?.manager?.name ? (
+          <Text style={styles.meta}>Manager: {profile.manager.name}</Text>
+        ) : null}
+        {profile?.homeOrgUnit?.name ? (
+          <Text style={styles.meta}>
+            Org: {profile.homeOrgUnit.name}
+            {profile.homeOrgUnit.typeLabel ? ` · ${profile.homeOrgUnit.typeLabel}` : ""}
+          </Text>
+        ) : null}
+        {profile?.repProfile?.status ? (
+          <Text style={styles.meta}>
+            Status: {repStatusLabels[profile.repProfile.status] ?? profile.repProfile.status}
+            {profile.repProfile.onCallEnabled ? " · On call" : ""}
+          </Text>
+        ) : null}
+        {profile?.repProfile?.credentialStatus ? (
+          <Text style={styles.meta}>Credential: {profile.repProfile.credentialStatus}</Text>
+        ) : null}
+        {profile?.repProfile?.products?.length ? (
+          <Text style={styles.meta}>Products: {profile.repProfile.products.join(", ")}</Text>
+        ) : null}
       </View>
 
       <ErrorBanner message={error} />
@@ -33,7 +70,39 @@ export default function AccountScreen() {
         </View>
       ) : null}
 
-      <Text style={styles.label}>API server</Text>
+      <Text style={styles.label}>Phone</Text>
+      <TextInput
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+        placeholder="Mobile number"
+        placeholderTextColor={colors.slate400}
+        style={styles.input}
+      />
+      <PrimaryButton
+        title="Save profile"
+        variant="outline"
+        loading={saving}
+        onPress={async () => {
+          setSaving(true);
+          setError("");
+          setMessage("");
+          try {
+            await api("/api/profile", {
+              method: "PATCH",
+              body: JSON.stringify({ phone: phone.trim() || null }),
+            });
+            setMessage("Profile saved");
+            await apiProfile();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not save profile");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
+
+      <Text style={[styles.label, { marginTop: 20 }]}>API server</Text>
       <TextInput
         value={serverUrl}
         onChangeText={setServerUrl}

@@ -10,6 +10,13 @@ export type SessionUser = {
   adminPermissions: string[];
 };
 
+export type RequestReply = {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string; role: Role };
+};
+
 export type RequestData = {
   id: string;
   facilityName: string;
@@ -40,6 +47,37 @@ export type RequestData = {
   identifiersHidden?: boolean;
   acknowledgedAt?: string | null;
   alertActive?: boolean;
+  teamCalendarVisibility?: string;
+  replies?: RequestReply[];
+};
+
+export type TeamMetrics = {
+  reportCount: number;
+  reports?: string[];
+  phiIncluded: false;
+  totals: {
+    all: number;
+    active: number;
+    completed: number;
+    escalated: number;
+    available: number;
+  } | null;
+};
+
+export type AccountProfile = {
+  name: string;
+  email: string;
+  phone: string | null;
+  company?: { name: string } | null;
+  manager?: { id: string; name: string; role: string } | null;
+  homeOrgUnit?: { id: string; name: string; typeLabel: string | null } | null;
+  repProfile?: {
+    status?: string;
+    products?: string[];
+    credentialStatus?: string | null;
+    onCallEnabled?: boolean;
+    travelRadiusMiles?: number;
+  } | null;
 };
 
 export type RepProfile = {
@@ -93,6 +131,9 @@ export type HealthcareSite = {
   city?: string | null;
   state?: string | null;
   zipCode?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  isPrimary?: boolean;
 };
 
 export type NotificationItem = {

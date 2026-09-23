@@ -13,6 +13,14 @@ type SharedAssignment = {
   scheduledAt: string;
   status: string;
   repName: string;
+  teamCalendarVisibility?: string;
+};
+
+type MyAssignment = {
+  id: string;
+  facilityName: string;
+  scheduledAt: string;
+  teamCalendarVisibility: string;
 };
 
 export default function TeamsScreen() {
@@ -20,6 +28,7 @@ export default function TeamsScreen() {
   const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [shared, setShared] = useState<SharedAssignment[]>([]);
+  const [mine, setMine] = useState<MyAssignment[]>([]);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -32,16 +41,23 @@ export default function TeamsScreen() {
       setSelectedId(tid);
       if (!tid) {
         setShared([]);
+        setMine([]);
         return;
       }
       const coverage = await api<{
-        teams: { sharedAssignments: SharedAssignment[] }[];
+        teams: {
+          sharedAssignments: SharedAssignment[];
+          members: { id: string; assignments?: MyAssignment[] }[];
+        }[];
       }>(`/api/company/teams/coverage?teamId=${tid}&month=${monthKey(new Date())}`);
-      setShared(coverage.teams?.[0]?.sharedAssignments ?? []);
+      const team = coverage.teams?.[0];
+      setShared(team?.sharedAssignments ?? []);
+      const me = team?.members.find((m) => m.id === user?.id);
+      setMine(me?.assignments ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load teams");
     }
-  }, [selectedId]);
+  }, [selectedId, user?.id]);
 
   useEffect(() => {
     load();
@@ -52,8 +68,11 @@ export default function TeamsScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <ErrorBanner message={error} />
+      <Text style={styles.lead}>
+        Team calendar shows shared assignments only. Your manager always sees your schedule.
+      </Text>
       {teams.length === 0 ? (
-        <EmptyState title="No teams yet" subtitle="Your company admin can add you to a team." />
+        <EmptyState title="No teams yet" subtitle="Ask your manager to add you." />
       ) : (
         <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pills}>
@@ -84,6 +103,47 @@ export default function TeamsScreen() {
             </View>
           ) : null}
 
+          {mine.length > 0 ? (
+            <>
+              <Text style={styles.section}>My assignments — peer visibility</Text>
+              {mine.map((item) => (
+                <View key={item.id} style={styles.item}>
+                  <Text style={styles.itemTitle}>{item.facilityName}</Text>
+                  <Text style={styles.meta}>{formatWhen(item.scheduledAt)}</Text>
+                  <View style={styles.visRow}>
+                    {(
+                      [
+                        ["SHARED_WITH_TEAM", "Share with team"],
+                        ["HIDDEN_FROM_TEAM_PEERS", "Hide from peers"],
+                      ] as const
+                    ).map(([value, label]) => {
+                      const on = item.teamCalendarVisibility === value;
+                      return (
+                        <Pressable
+                          key={value}
+                          onPress={async () => {
+                            try {
+                              await api(`/api/requests/${item.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({ teamCalendarVisibility: value }),
+                              });
+                              await load();
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "Update failed");
+                            }
+                          }}
+                          style={[styles.visChip, on && styles.visChipOn]}
+                        >
+                          <Text style={[styles.visText, on && styles.visTextOn]}>{label}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : null}
+
           <Text style={styles.section}>Shared assignments</Text>
           {shared.length === 0 ? (
             <EmptyState title="Nothing shared this month" />
@@ -106,6 +166,7 @@ export default function TeamsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.slate50 },
   content: { padding: 16, paddingBottom: 40 },
+  lead: { color: colors.slate500, marginBottom: 14, lineHeight: 20 },
   pills: { marginBottom: 14 },
   pill: {
     marginRight: 8,
@@ -147,4 +208,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   itemTitle: { fontWeight: "700", color: colors.slate900 },
+  visRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  visChip: {
+    borderRadius: 999,
+    backgroundColor: colors.slate100,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  visChipOn: { backgroundColor: colors.rose },
+  visText: { color: colors.slate600, fontWeight: "600", fontSize: 12 },
+  visTextOn: { color: colors.white },
 });

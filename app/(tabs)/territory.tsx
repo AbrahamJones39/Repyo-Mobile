@@ -145,7 +145,11 @@ export default function TerritoryScreen() {
         </View>
       </View>
 
-      <Text style={styles.section}>Zip / county coverage</Text>
+      <Text style={styles.section}>Legacy zip notes</Text>
+      <Text style={styles.hint}>
+        Facility coverage is the primary routing signal. Use the Facilities tab for hospitals you
+        cover.
+      </Text>
       {territories.map((row, idx) => (
         <View key={idx} style={styles.card}>
           <TextInput
@@ -190,6 +194,7 @@ export default function TerritoryScreen() {
       />
 
       <Text style={styles.section}>Covered sites</Text>
+      <Text style={styles.hint}>Same list as Facilities. Requests route to the covering rep.</Text>
       <TextInput
         value={query}
         onChangeText={searchSites}
@@ -267,6 +272,7 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: colors.rose },
   chipText: { color: colors.slate600, fontWeight: "600", fontSize: 12 },
   chipTextOn: { color: colors.white },
+  hint: { color: colors.slate500, fontSize: 13, lineHeight: 18, marginBottom: 10 },
   section: {
     marginTop: 10,
     marginBottom: 8,
