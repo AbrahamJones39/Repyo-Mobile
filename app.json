@@ -23,7 +23,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -52,7 +57,11 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://gorepyo.com"
+      "apiUrl": "https://gorepyo.com",
+      "router": {},
+      "eas": {
+        "projectId": "5a197ca9-5ee0-43e1-bff4-ae196d9bff52"
+      }
     }
   }
 }
