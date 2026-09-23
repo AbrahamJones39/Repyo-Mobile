@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ready,
       async login(email, password, serverUrl) {
         if (serverUrl) {
-          await setApiUrl(serverUrl);
+          await setApiUrl(serverUrl.trim());
         }
         const data = await api<{ token: string; user: SessionUser }>(
           "/api/mobile/auth/login",

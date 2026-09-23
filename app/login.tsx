@@ -1,6 +1,11 @@
 import { BrandMark, ErrorBanner, PrimaryButton } from "@/components/ui";
 import { useAuth } from "@/context/auth";
-import { DEFAULT_API_URL, getApiUrl } from "@/lib/api";
+import {
+  DEFAULT_API_URL,
+  getApiUrl,
+  isLocalDevApiUrl,
+  suggestedLocalApiUrl,
+} from "@/lib/api";
 import { colors } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import {
@@ -25,7 +30,9 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    getApiUrl().then(setServerUrl);
+    getApiUrl().then((url) => {
+      setServerUrl(isLocalDevApiUrl(url) ? DEFAULT_API_URL : url);
+    });
   }, []);
 
   async function submit() {
@@ -86,6 +93,8 @@ export default function LoginScreen() {
           style={{ marginTop: 18 }}
         />
 
+        <Text style={styles.serverLine}>Server: {serverUrl || DEFAULT_API_URL}</Text>
+
         <Pressable onPress={() => setShowServer((v) => !v)} style={styles.serverToggle}>
           <Text style={styles.serverToggleText}>
             {showServer ? "Hide server" : "Advanced: change server"}
@@ -99,15 +108,25 @@ export default function LoginScreen() {
               onChangeText={setServerUrl}
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder="https://gorepyo.com"
+              keyboardType="url"
+              placeholder={suggestedLocalApiUrl()}
               placeholderTextColor={colors.slate400}
               style={styles.input}
             />
+            <Pressable onPress={() => setServerUrl(DEFAULT_API_URL)}>
+              <Text style={styles.serverHint}>Use production: {DEFAULT_API_URL}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setServerUrl(suggestedLocalApiUrl())}
+              style={{ marginBottom: 8 }}
+            >
+              <Text style={styles.serverHint}>Use local website: {suggestedLocalApiUrl()}</Text>
+            </Pressable>
           </>
         ) : null}
 
         <Text style={styles.hint}>
-          Device reps only. Providers and company admins should use the website.
+          Device reps only. This app talks to https://gorepyo.com unless you change the server.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -143,8 +162,15 @@ const styles = StyleSheet.create({
   passwordWrap: { position: "relative", marginBottom: 4 },
   eye: { position: "absolute", right: 12, top: 14 },
   eyeText: { color: colors.slate500, fontWeight: "600" },
-  serverToggle: { marginTop: 16, alignSelf: "center" },
+  serverLine: {
+    marginTop: 14,
+    textAlign: "center",
+    color: colors.slate400,
+    fontSize: 12,
+  },
+  serverToggle: { marginTop: 8, alignSelf: "center" },
   serverToggleText: { color: colors.slate500, fontSize: 13 },
+  serverHint: { color: colors.rose, fontSize: 13, marginBottom: 8 },
   hint: {
     marginTop: 24,
     textAlign: "center",
