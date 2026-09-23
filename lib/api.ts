@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 
 const TOKEN_KEY = "repyo.token";
 const API_KEY = "repyo.apiUrl";
-const PRODUCTION_HOST = "gorepyo.com";
+const PRODUCTION_URL = "https://gorepyo.com";
 
 export class ApiError extends Error {
   constructor(
@@ -15,11 +15,17 @@ export class ApiError extends Error {
   }
 }
 
+function extraApiUrl() {
+  const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
+  return extra?.apiUrl?.trim() || "";
+}
+
 function isPrivateHost(host: string) {
-  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
+  const hostname = host.split(":")[0];
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") {
     return true;
   }
-  const parts = host.split(".").map(Number);
+  const parts = hostname.split(".").map(Number);
   if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
     return false;
   }
@@ -27,7 +33,6 @@ function isPrivateHost(host: string) {
   return a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
 }
 
-/** Computer LAN host from Expo Go, e.g. 10.157.129.102 */
 export function getDevLanHost() {
   const hostUri = Constants.expoConfig?.hostUri ?? "";
   const host = hostUri.split(":")[0]?.trim();
@@ -41,60 +46,64 @@ export function suggestedLocalApiUrl() {
 }
 
 export function getDefaultApiUrl() {
-  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (fromEnv) return fromEnv;
-  return `https://${PRODUCTION_HOST}`;
-}
-
-export function isLocalDevApiUrl(url: string) {
-  try {
-    return isPrivateHost(new URL(url).hostname);
-  } catch {
-    return false;
-  }
+  return process.env.EXPO_PUBLIC_API_URL?.trim() || extraApiUrl() || PRODUCTION_URL;
 }
 
 export const DEFAULT_API_URL = getDefaultApiUrl();
 
+export function isLocalDevApiUrl(url: string) {
+  const host = url.match(/^https?:\/\/([^/?#]+)/i)?.[1];
+  return host ? isPrivateHost(host) : false;
+}
+
+/** Parse without Expo's `URL` — it can drop the host in Expo Go. */
 export function normalizeApiUrl(input: string) {
   let raw = input.trim().replace(/\/+$/, "");
   if (!raw) {
-    throw new Error("Enter an API server URL like http://YOUR_LAN_IP:3000");
+    throw new Error(`Enter an API server URL like ${PRODUCTION_URL}`);
   }
   if (/^exp[s]?:\/\//i.test(raw)) {
-    throw new Error(
-      `That's the Expo app URL. Use the GoRepYo website, like ${suggestedLocalApiUrl()}`
-    );
+    throw new Error(`That's the Expo app URL. Use ${PRODUCTION_URL}`);
   }
-  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(raw)) {
-    const host = raw.split("/")[0].split(":")[0];
+  if (!/^https?:\/\//i.test(raw)) {
+    const host = raw.split("/")[0];
     raw = `${isPrivateHost(host) ? "http" : "https"}://${raw}`;
   }
 
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error(`Invalid API server URL. Use ${suggestedLocalApiUrl()}`);
+  const match = raw.match(/^(https?):\/\/([^/?#]+)(.*)$/i);
+  if (!match) {
+    throw new Error(`Invalid API server URL. Use ${PRODUCTION_URL}`);
   }
 
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("API server must start with http:// or https://");
-  }
-
-  const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  const protocol = match[1].toLowerCase();
+  let host = match[2];
+  const rest = match[3].split(/[?#]/)[0].replace(/\/+$/, "");
+  const hostname = host.split(":")[0];
   const lan = getDevLanHost();
-  if (loopback && lan) {
-    parsed.hostname = lan;
+  if ((hostname === "localhost" || hostname === "127.0.0.1") && lan) {
+    const port = host.includes(":") ? host.slice(host.indexOf(":")) : "";
+    host = `${lan}${port}`;
   }
 
-  const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
-  return `${parsed.protocol}//${parsed.host}${path}`;
+  return `${protocol}://${host}${rest}`;
+}
+
+function absoluteApiUrl(baseUrl: string, path: string) {
+  const base = normalizeApiUrl(baseUrl);
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  const url = `${base}${suffix}`;
+  if (!/^https?:\/\/[^/]+\/.+/.test(url)) {
+    throw new Error(`Refusing to call a relative URL (${url}). Server should be ${PRODUCTION_URL}`);
+  }
+  return url;
 }
 
 export async function getApiUrl() {
   const stored = await SecureStore.getItemAsync(API_KEY);
-  if (!stored) return getDefaultApiUrl();
+  if (!stored || isLocalDevApiUrl(stored)) {
+    if (stored) await SecureStore.deleteItemAsync(API_KEY);
+    return getDefaultApiUrl();
+  }
   try {
     return normalizeApiUrl(stored);
   } catch {
@@ -133,7 +142,6 @@ function headerValue(headers: HeadersInit | undefined, name: string) {
   return found?.[1] ?? null;
 }
 
-/** React Native XHR — Expo Go's expo/fetch rejects some valid URLs as "bad URL". */
 function request(
   url: string,
   init: RequestInit = {}
@@ -154,27 +162,36 @@ function request(
         json: async () => JSON.parse(xhr.responseText || "null"),
       });
     };
-    xhr.onerror = () =>
-      reject(new Error(`Could not reach ${url}. Is the GoRepYo website running?`));
+    xhr.onerror = () => reject(new Error(`Could not reach ${url}`));
     xhr.ontimeout = () => reject(new Error(`Timed out reaching ${url}`));
-    xhr.open((init.method ?? "GET").toUpperCase(), url);
-    xhr.timeout = 20000;
-    xhr.setRequestHeader("Accept", "application/json");
-    if (init.body) {
-      xhr.setRequestHeader("Content-Type", "application/json");
+    try {
+      xhr.open((init.method ?? "GET").toUpperCase(), url);
+      xhr.timeout = 20000;
+      xhr.setRequestHeader("Accept", "application/json");
+      if (init.body) {
+        xhr.setRequestHeader("Content-Type", "application/json");
+      }
+      const auth = headerValue(init.headers, "Authorization");
+      if (auth) {
+        xhr.setRequestHeader("Authorization", auth);
+      }
+      xhr.send(typeof init.body === "string" ? init.body : null);
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(`Could not reach ${url}`));
     }
-    const auth = headerValue(init.headers, "Authorization");
-    if (auth) {
-      xhr.setRequestHeader("Authorization", auth);
-    }
-    xhr.send(typeof init.body === "string" ? init.body : null);
   });
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const [rawBase, token] = await Promise.all([getApiUrl(), getToken()]);
-  const baseUrl = normalizeApiUrl(rawBase);
-  const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+export async function api<T>(
+  path: string,
+  init?: RequestInit,
+  baseOverride?: string
+): Promise<T> {
+  const [storedBase, token] = await Promise.all([
+    baseOverride ? Promise.resolve(baseOverride) : getApiUrl(),
+    getToken(),
+  ]);
+  const url = absoluteApiUrl(storedBase, path);
 
   const res = await request(url, {
     ...init,

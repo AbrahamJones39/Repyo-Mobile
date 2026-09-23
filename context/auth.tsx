@@ -47,15 +47,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       ready,
       async login(email, password, serverUrl) {
-        if (serverUrl) {
-          await setApiUrl(serverUrl.trim());
+        const base = (serverUrl ?? "").trim();
+        if (base) {
+          await setApiUrl(base);
         }
         const data = await api<{ token: string; user: SessionUser }>(
           "/api/mobile/auth/login",
           {
             method: "POST",
             body: JSON.stringify({ email, password }),
-          }
+          },
+          base || undefined
         );
         if (data.user.role !== "REP") {
           throw new Error("This app is for device representatives only");

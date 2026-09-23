@@ -31,7 +31,7 @@ export default function LoginScreen() {
 
   useEffect(() => {
     getApiUrl().then((url) => {
-      setServerUrl(isLocalDevApiUrl(url) ? DEFAULT_API_URL : url);
+      setServerUrl(!url || isLocalDevApiUrl(url) ? DEFAULT_API_URL : url);
     });
   }, []);
 
